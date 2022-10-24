@@ -263,6 +263,12 @@ Ext.define('Voyant.panel.CollocatesGraph', {
  //       		this.zoomToFit();
         	}
 		}, this);
+
+		this.on('beforedestroy', function(panel) {
+			if (this.getVisLayout()) {
+				this.getVisLayout().stop(); // make sure force simulation isn't running when removed
+			}
+		}, this);
         
         me.callParent(arguments);
 
@@ -280,7 +286,12 @@ Ext.define('Voyant.panel.CollocatesGraph', {
 			var limit = 3;
 			var query = this.getApiParam('query');
 			if (query !== undefined) {
-				limit = Ext.isArray(query) ? query.length : query.split(',').length;
+				if (query.indexOf('^@') === 0) {
+					// it's a category so increase limit so that we get most/all of the terms
+					limit = 20;
+				} else {
+					limit = Ext.isArray(query) ? query.length : query.split(',').length;
+				}
 			}
 			this.getCorpus().getCorpusTerms({autoLoad: false}).load({
 				params: {

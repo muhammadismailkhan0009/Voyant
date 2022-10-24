@@ -72,13 +72,15 @@ TermsRadio.prototype = {
 	constructor: TermsRadio
 	
 	,loadRecords: function(records) {
-		this.initData(records);
-		this.prepareData();
-		//for shiftcount > 0 exclusively
-		var len = this.shiftCount;
-		while(len-- > 0){
-		//for(var j = 0; j < this.shiftCount; j++){
-			this.displayData.shift();
+		if (records.length > 0) {
+			this.initData(records);
+			this.prepareData();
+			//for shiftcount > 0 exclusively
+			var len = this.shiftCount;
+			while(len-- > 0){
+			//for(var j = 0; j < this.shiftCount; j++){
+				this.displayData.shift();
+			}
 		}
 		if (this.chart != null) {
 			this.redraw();
@@ -1205,6 +1207,7 @@ TermsRadio.prototype = {
 		if (legendAdd === true) {
 			var legend = this.parent.query('[xtype=legend]')[0];
 			legend.getStore().add({name: term, mark: color});
+			legend.refresh();
 		} else {
 			var legend = this.parent.query('[xtype=legend]')[0];
 			var record = legend.getStore().findRecord('name', term);
@@ -1251,6 +1254,7 @@ TermsRadio.prototype = {
 			var legend = this.parent.query('[xtype=legend]')[0];
 			var index = legend.getStore().findExact('name', term);
 			legend.getStore().removeAt(index);
+			legend.refresh();
 		}
 		
 		var updateApi = this.parent.getApiParam('selectedWords');

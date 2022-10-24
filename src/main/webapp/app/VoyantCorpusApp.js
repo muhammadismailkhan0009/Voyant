@@ -69,13 +69,15 @@ Ext.define('Voyant.VoyantCorpusApp', {
         	this.loadCorpusFromParams(queryParams);
         	
         	if (queryParams.palette) {
-        		if (queryParams.palette.indexOf(",")>-1) { // treat as inline
+        		if (queryParams.palette.indexOf(",") > -1) { // treat as inline
         	    	var palette = Ext.decode(queryParams.palette);
         	    	this.addColorPalette(queryParams.palette, palette);
         		} else {
-            		this.loadCustomColorPalette(queryParams.palette);
-        		}
-        	}
+					if (this.getPalettes()[queryParams.palette] === undefined) {
+						this.loadCustomColorPalette(queryParams.palette);
+					}
+				}
+			}
     	} else {
     		var viewport = this.getViewport();
     		if (viewport) {
@@ -106,6 +108,12 @@ Ext.define('Voyant.VoyantCorpusApp', {
     
     loadCorpusFromParams: function(params) {
 		var me = this;
+
+		if (this.errorLoadingCorpus) {
+			delete params.corpus; // remove corpus ID so that it's not used erroneously
+			delete this.errorLoadingCorpus;
+		}
+
 		var view = me.getViewport()
 		view.mask(this.localize("fetchingCorpus"));
 		if (params.archive) { // fix a few URLs we know about
@@ -125,6 +133,7 @@ Ext.define('Voyant.VoyantCorpusApp', {
 				me.dispatchEvent('loadedCorpus', this, corpus);
 			}
 		}).otherwise(function() {
+			me.errorLoadingCorpus = true; // track error so we can remove corpus ID from params on subsequent load
 			view.unmask();
 		})
     },
@@ -239,40 +248,10 @@ Ext.define('Voyant.VoyantCorpusApp', {
     	}
     	return params.corpus || params.input || (this.getCorpusId && this.getCorpusId()); // TODO: should this include "archive" from V1?
     },
-	
-	loadCategoryData: function(id) {
-		return this.getCategoriesManager().load(id, {
-			trombone: Voyant.application.getTromboneUrl()
-		});
-	},
-
-	saveCategoryData: function(data) {
-		return this.getCategoriesManager().save({}, {
-			trombone: Voyant.application.getTromboneUrl()
-		});
-	},
     
     listeners: {
     	loadedCorpus: function(src, corpus) {
     		this.setCorpus(corpus);
-    		
-    		// let's load the categories based on the corpus
-        	if (this.getApiParam("categories")) {
-				this.loadCategoryData(this.getApiParam("categories")).then(function() {
-					// assign colors
-					for (var category in this.getCategoriesManager().getCategories()) {
-						var color = this.getCategoriesManager().getCategoryFeature(category, 'color');
-						if (color !== undefined) {
-							var rgb = this.hexToRgb(color);
-							var terms = this.getCategoriesManager().getCategoryTerms(category);
-							for (var i = 0; i < terms.length; i++) {
-								this.setColorForTerm(terms[i], rgb);
-							}
-						}
-					}
-				}.bind(this));
-        	}    	
-
     		
     		this.on("unhandledEvent", function(src, eventName, data) {
 				var url = this.getBaseUrl() + '?corpus='+corpus.getAliasOrId();
