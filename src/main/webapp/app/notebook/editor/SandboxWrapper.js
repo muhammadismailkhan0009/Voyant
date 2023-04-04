@@ -3,7 +3,14 @@ Ext.define("Voyant.notebook.editor.SandboxWrapper", {
 	mixins: ["Voyant.util.Localization"],
 	alias: "widget.sandboxwrapper",
 	statics: {
-		i18n: {}
+		i18n: {
+			expandResults: 'Expand Results',
+			collapseResults: 'Collapse Results',
+			viewWarnings: 'View Warning(s)',
+			generalWarning: 'Warning: {warningInfo}',
+			serializationWarning: 'The variable "{warningInfo}" cannot be passed between cells.',
+			loadVariableWarning: 'The variable "{warningInfo}" could not be loaded.'
+		},
 	},
 
 	config: {
@@ -54,7 +61,7 @@ Ext.define("Voyant.notebook.editor.SandboxWrapper", {
 					anchor: '100%',
 					height: '100%',
 					src: sandboxSrcUrl,
-					renderTpl: ['<iframe allow="midi; geolocation; microphone; camera; display-capture; encrypted-media;" sandbox="allow-same-origin allow-scripts allow-modals allow-popups allow-forms allow-top-navigation-by-user-activation allow-downloads" src="{src}" id="{id}-iframeEl" data-ref="iframeEl" name="{frameName}" width="100%" height="100%" frameborder="0"></iframe>']
+					renderTpl: ['<iframe allow="midi; geolocation; microphone; camera; display-capture; encrypted-media;" sandbox="allow-same-origin allow-scripts allow-modals allow-popups allow-forms allow-top-navigation-by-user-activation allow-downloads" src="{src}" id="{id}-iframeEl" data-ref="iframeEl" name="{frameName}" width="100%" height="100%" frameborder="0" style="min-height: 40px"></iframe>']
 				},{
 					xtype: 'toolbar',
 					itemId: 'buttons',
@@ -64,21 +71,40 @@ Ext.define("Voyant.notebook.editor.SandboxWrapper", {
 					style: { background: 'none', paddingTop: '6px', pointerEvents: 'none' },
 					defaults: { style: { pointerEvents: 'auto'} },
 					items: ['->',{
+						itemId: 'warnings',
+						glyph: 'xf12a@FontAwesome',
+						hidden: true,
+						tooltip: this.localize('viewWarnings'),
+						warnings: [],
+						handler: function(btn) {
+							if (btn.warnings.length > 0) {
+								Ext.Msg.show({
+									title: 'Warning',
+									message: btn.warnings,
+									buttons: Ext.Msg.OK,
+									icon: Ext.Msg.INFO
+								});
+							}
+						}
+					},{
 						itemId: 'expandButton',
 						glyph: isExpanded ? 'xf066@FontAwesome' : 'xf065@FontAwesome',
-						tooltip: isExpanded ? 'Contract Results' : 'Expand Results',
+						tooltip: isExpanded ? this.localize('collapseResults') : this.localize('expandResults'),
 						handler: function() {
-							this._doExpandContract();
+							this._doExpandCollapse();
 						},
 						scope: this
-					},{
-						xtype: 'notebookwrapperexport'
-					},{
+					}
+					// ,{
+					// 	xtype: 'notebookwrapperexport'
+					// }
+					,{
 						glyph: 'xf014@FontAwesome',
 						tooltip: 'Remove Results',
 						handler: function() {
-							this.resetResults();
+							//this.resetResults();
 							this.clear();
+							this.hide();
 						},
 						scope: this
 					}]
@@ -94,7 +120,7 @@ Ext.define("Voyant.notebook.editor.SandboxWrapper", {
 					afterrender: function(cmp) {
 						var me = this;
 						cmp.getEl().on('click', function() {
-							me._doExpandContract();
+							me._doExpandCollapse();
 						})
 					},
 					scope: this
@@ -136,6 +162,7 @@ Ext.define("Voyant.notebook.editor.SandboxWrapper", {
 			console.log("clearing but not visible!", this);
 			this.show();
 		}
+		this.down('#warnings').hide().warnings = [];
 		this._sendMessage({type: 'command', command: 'clear'});
 	},
 
@@ -151,15 +178,22 @@ Ext.define("Voyant.notebook.editor.SandboxWrapper", {
 		}
 
 		// reset
-		this.resetResults();
+		//this.resetResults(); // TODO review this vs setvisible
+		this.down('#warnings').hide().warnings = [];
+		this.show();
 		this.setHasRunError(false);
-		this.getEl().removeCls(['error','success']);
+		this.getEl().removeCls(['error','success','warning']);
 
 		this.setRunPromise(new Ext.Deferred());
 
 		var actualPromise = this.getRunPromise().promise;
-		actualPromise.then(function() {
-			this.getEl().addCls('success');
+		actualPromise.then(function(result) {
+			if (result.warnings && result.warnings.length > 0) {
+				this._handleWarnings(result.warnings);
+				this.getEl().addCls('warning');
+			} else {
+				this.getEl().addCls('success');
+			}
 		}, function() {
 			this.setHasRunError(true);
 			this.getEl().addCls('error');
@@ -279,7 +313,8 @@ Ext.define("Voyant.notebook.editor.SandboxWrapper", {
 						break;
 				}
 
-				if (eventData.command !== 'getContents') { // don't overwrite value or variables when we just want to get sandbox contents, i.e. dom output
+				if (eventData.command !== 'getContents' &&  // don't overwrite value or variables when we just want to get sandbox contents, i.e. dom output
+					eventData.command !== 'clear') { // don't wipe variables just because results were cleared TODO review
 					if (eventData.value) {
 						me.setCachedResultsValue(eventData.value);
 					}
@@ -301,15 +336,32 @@ Ext.define("Voyant.notebook.editor.SandboxWrapper", {
 		}
 	},
 
-	_doExpandContract: function() {
+	_handleWarnings: function(warningsArray) {
+		var warningsContent = [];
+		warningsArray.forEach(function(warning) {
+			switch(warning.type) {
+				case 'serialization':
+					warningsContent.push(this.localize('serializationWarning').replace('{warningInfo}', warning.warningInfo));
+					break;
+				case 'loadVariable':
+					warningsContent.push(this.localize('loadVariableWarning').replace('{warningInfo}', warning.warningInfo));
+					break;
+			}
+		}, this)
+		var parent = this.down('#warnings');
+		parent.show();
+		parent.warnings = '<p>'+warningsContent.join('</p><p>')+'</p>';
+	},
+
+	_doExpandCollapse: function() {
 		var expandButton = this.down('#expandButton');
 		if (this.getExpandResults()) {
 			this.setExpandResults(false);
-			expandButton.setTooltip('Expand Results');
+			expandButton.setTooltip(this.localize('expandResults'));
 			expandButton.setGlyph('xf065@FontAwesome');
 		} else {
 			this.setExpandResults(true);
-			expandButton.setTooltip('Contract Results');
+			expandButton.setTooltip(this.localize('collapseResults'));
 			expandButton.setGlyph('xf066@FontAwesome');
 		}
 		

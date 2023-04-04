@@ -1,8 +1,7 @@
 Ext.define('Voyant.notebook.editor.FileInput', {
-	extend: 'Ext.container.Container',
+	extend: 'Voyant.notebook.editor.CachedInput',
 	alias: 'widget.notebookfileinput', 
 	mixins: ['Voyant.util.Localization'],
-	cls: 'notebook-file-input',
 	config: {
 		dataUrl: undefined,
 		resourceId: undefined,
@@ -20,10 +19,8 @@ Ext.define('Voyant.notebook.editor.FileInput', {
 	serverStorage: undefined,
 
 	constructor: function(config) {
-		Ext.apply(this, {
-			height: 125,
+		Ext.apply(this, config, {
 			width: '100%',
-			layout: 'center',
 			items: [{
 				xtype: 'voyantfilefield',
 				itemId: 'file',
@@ -43,6 +40,8 @@ Ext.define('Voyant.notebook.editor.FileInput', {
 						this.setFileName(filename);
 						this.setDataUrl(undefined);
 						this.setResourceId(undefined);
+
+						this.fireEvent('change', filename);
 					},
 					scope: this
 				}
@@ -62,30 +61,45 @@ Ext.define('Voyant.notebook.editor.FileInput', {
 		this.callParent(arguments);
 	},
 
+	getCode: function(varName) {
+		var dfd = new Ext.Deferred();
+
+		this.getDataUrl().then(function(dataUrl) {
+			var code = varName+'= Spyral.Util.dataUrlToBlob(`'+dataUrl+'`)';
+			dfd.resolve(code);
+		}, function() {
+			dfd.reject();
+		});
+
+		return dfd.promise;
+	},
+
+	getInput: function() {
+		return {
+			resourceId: this.getResourceId(),
+			fileName: this.getFileName()
+		}
+	},
+
 	getDataUrl: function() {
 		var dfd = new Ext.Deferred();
 
-		var dataUrl = this.callParent();
-		if (dataUrl === undefined) {
-			if (this.getResourceId()) {
-				this.loadStoredFile().then(function(dataUrl) {
-					dfd.resolve(dataUrl);
+		if (this.getResourceId()) {
+			this.loadStoredFile().then(function(dataUrl) {
+				dfd.resolve(dataUrl);
+			}, function() {
+				dfd.reject();
+			})
+		} else {
+			if (this.getFile()) {
+				this.storeFile().then(function(result) {
+					dfd.resolve(result[1]);
 				}, function() {
 					dfd.reject();
-				})
+				});
 			} else {
-				if (this.getFile()) {
-					this.storeFile().then(function(result) {
-						dfd.resolve(result[1]);
-					}, function() {
-						dfd.reject();
-					});
-				} else {
-					dfd.reject();
-				}
+				dfd.reject();
 			}
-		} else {
-			dfd.resolve(dataUrl);
 		}
 
 		return dfd.promise;
@@ -95,9 +109,10 @@ Ext.define('Voyant.notebook.editor.FileInput', {
 		var dfd = new Ext.Deferred();
 
 		this.getDataUrl().then(function(dataUrl) {
-			dfd.resolve(Spyral.Util.dataUrlToBlob(dataUrl));
-		}, function(err) {
-			dfd.reject(err);
+			var blob = Spyral.Util.dataUrlToBlob(dataUrl);
+			dfd.resolve(blob);
+		}, function() {
+			dfd.reject();
 		});
 
 		return dfd.promise;
